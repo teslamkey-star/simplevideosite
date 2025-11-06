@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quick Player — Paste a Link or Upload</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            darkbg: '#0f0f10',
+            darkpanel: '#1b1b1d',
+            accent: '#6366f1'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { color-scheme: dark; }
+  </style>
+  <script>
+    function parseYouTubeId(url){try{const u=new URL(url);if(u.hostname.includes('youtube.com'))return u.searchParams.get('v');if(u.hostname==='youtu.be')return u.pathname.slice(1)}catch(_){}return null}
+    function parseVimeoId(url){try{const u=new URL(url);if(u.hostname.includes('vimeo.com')){const p=u.pathname.split('/').filter(Boolean);const id=p.find(x=>/^\d+$/.test(x));return id||null}}catch(_){}return null}
+    function isHls(u){return/\.m3u8(\?.*)?$/i.test(u)}function isDash(u){return/\.mpd(\?.*)?$/i.test(u)}function isDirectVideo(u){return/\.(mp4|webm|ogg)(\?.*)?$/i.test(u)}
+    document.addEventListener('DOMContentLoaded',()=>{
+      const form=document.getElementById('loader-form'),urlInput=document.getElementById('url-input'),fileInput=document.getElementById('file-input'),area=document.getElementById('player-area'),hist=document.getElementById('history'),pipBtn=document.getElementById('pip-btn');
+      let videoEl=null,hls=null;
+      function clearPlayer(){area.innerHTML='';if(hls){hls.destroy();hls=null;}videoEl=null;}
+      function saveHistory(label,val){try{const k='qp-history';const list=JSON.parse(localStorage.getItem(k)||'[]');list.unshift({label,value:val,ts:Date.now()});localStorage.setItem(k,JSON.stringify(list.slice(0,10)));renderHistory();}catch(_){}}
+      function renderHistory(){const k='qp-history';const list=JSON.parse(localStorage.getItem(k)||'[]');hist.innerHTML='';list.forEach((it,i)=>{const li=document.createElement('li');li.className='flex justify-between py-1 text-gray-300';const b=document.createElement('button');b.className='underline text-sm';b.textContent=it.label;b.addEventListener('click',()=>{urlInput.value=it.value;loadFromUrl(it.value)});const d=document.createElement('button');d.textContent='×';d.className='text-gray-500 hover:text-gray-300';d.addEventListener('click',()=>{const nl=list.filter((_,j)=>j!==i);localStorage.setItem(k,JSON.stringify(nl));renderHistory();});li.append(b,d);hist.appendChild(li);});}
+      function makeVideoContainer(){const w=document.createElement('div');w.className='aspect-video w-full bg-black rounded-2xl overflow-hidden shadow';const v=document.createElement('video');v.controls=true;v.playsInline=true;v.className='w-full h-full';w.appendChild(v);area.appendChild(w);videoEl=v;return v;}
+      async function loadFromUrl(raw){clearPlayer();if(!raw)return;const url=raw.trim();const yt=parseYouTubeId(url);if(yt){const i=document.createElement('iframe');i.allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';i.allowFullscreen=true;i.className='w-full aspect-video rounded-2xl';i.src=`https://www.youtube.com/embed/${yt}`;area.appendChild(i);saveHistory(`YouTube • ${yt}`,url);return;}const vimeo=parseVimeoId(url);if(vimeo){const i=document.createElement('iframe');i.allow='autoplay; fullscreen; picture-in-picture';i.allowFullscreen=true;i.className='w-full aspect-video rounded-2xl';i.src=`https://player.vimeo.com/video/${vimeo}`;area.appendChild(i);saveHistory(`Vimeo • ${vimeo}`,url);return;}const v=makeVideoContainer();if(isHls(url)){if(Hls.isSupported()){hls=new Hls();hls.loadSource(url);hls.attachMedia(v);}else if(v.canPlayType('application/vnd.apple.mpegurl'))v.src=url;else{area.innerHTML='<div class="text-red-400">Your browser cannot play HLS (.m3u8)</div>';return;}saveHistory('HLS stream',url);}else if(isDirectVideo(url)||isDash(url)){v.src=url;v.addEventListener('error',()=>{area.insertAdjacentHTML('beforeend','<p class="text-amber-400 text-sm">May block cross-origin playback.</p>')});saveHistory('Direct video',url);}else{v.src=url;area.insertAdjacentHTML('beforeend','<p class="text-amber-400 text-sm">Tried to load as a direct video. Use .mp4/.webm or embed sites.</p>');saveHistory('Attempted direct',url);}}
+      form.addEventListener('submit',e=>{e.preventDefault();loadFromUrl(urlInput.value)});
+      fileInput.addEventListener('change',()=>{if(!fileInput.files[0])return;clearPlayer();const f=fileInput.files[0];const v=makeVideoContainer();v.src=URL.createObjectURL(f);v.play().catch(()=>{});saveHistory(`Local file • ${f.name}`,'(local)');});
+      pipBtn.addEventListener('click',async()=>{try{if(!videoEl)return alert('Load a direct video first');if(document.pictureInPictureElement)await document.exitPictureInPicture();else await videoEl.requestPictureInPicture();}catch(e){alert('PiP not available: '+e.message)}});
+      renderHistory();
+    });
+  </script>
+</head>
+<body class="min-h-screen bg-darkbg text-gray-200">
+  <div class="max-w-5xl mx-auto p-6">
+    <header class="mb-6">
+      <h1 class="text-2xl font-bold text-white">Quick Player</h1>
+      <p class="text-sm text-gray-400">Paste a link (YouTube, Vimeo, .mp4/.webm/.m3u8) or upload a file.</p>
+    </header>
+
+    <section class="grid gap-4 md:grid-cols-[1fr_auto] items-end">
+      <form id="loader-form" class="bg-darkpanel rounded-2xl p-4 border border-gray-700">
+        <label class="block text-sm font-medium mb-1 text-gray-300" for="url-input">Video link</label>
+        <input id="url-input" type="url" placeholder="https://example.com/video.mp4 or https://youtu.be/ID" class="w-full rounded-xl border border-gray-700 bg-gray-900 text-gray-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent" required>
+        <div class="mt-3 flex gap-2">
+          <button class="rounded-xl bg-accent text-white px-4 py-2 hover:bg-indigo-500">Load</button>
+          <button type="button" id="pip-btn" class="rounded-xl border border-gray-700 text-gray-300 px-4 py-2 hover:bg-gray-800">PiP</button>
+        </div>
+      </form>
+
+      <div class="bg-darkpanel rounded-2xl p-4 border border-gray-700">
+        <label class="block text-sm font-medium mb-1 text-gray-300" for="file-input">Or upload a file</label>
+        <input id="file-input" type="file" accept="video/*" class="block w-full text-sm text-gray-200" />
+        <p class="mt-2 text-xs text-gray-500">Plays locally in your browser.</p>
+      </div>
+    </section>
+
+    <main class="mt-6">
+      <div id="player-area" class="rounded-2xl"></div>
+      <p class="mt-3 text-xs text-gray-500">Some hosts block cross-origin playback. YouTube/Vimeo use their embeds.</p>
+    </main>
+
+    <aside class="mt-8 bg-darkpanel rounded-2xl p-4 border border-gray-700">
+      <h2 class="text-sm font-semibold mb-2 text-gray-300">Recent</h2>
+      <ul id="history" class="text-sm text-gray-400 space-y-1"></ul>
+    </aside>
+
+    <footer class="mt-8 text-xs text-gray-500">
+      <p>Built with HTML5 video + HLS.js. Dark mode edition.</p>
+    </footer>
+  </div>
+</body>
+</html>
